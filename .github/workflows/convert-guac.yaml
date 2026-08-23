@@ -1,0 +1,55 @@
+name: Convert Guacamole Recording to Video
+
+on:
+  push:
+    paths:
+      - '**.guac'
+  workflow_dispatch:
+    inputs:
+      guac_file_path:
+        description: 'Relative path to the .guac file (optional if triggered manually)'
+        required: false
+        default: ''
+
+jobs:
+  convert-guac:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate .guac files
+        id: find_files
+        run: |
+          if [ -n "${{ github.event.inputs.guac_file_path }}" ]; then
+            echo "FILE_PATH=${{ github.event.inputs.guac_file_path }}" >> $GITHUB_ENV
+          else
+            # Find the first .guac file in the repo
+            FILE=$(find . -maxdepth 3 -name "*.guac" | head -n 1)
+            if [ -z "$FILE" ]; then
+              echo "Error: No .guac file found."
+              exit 1
+            fi
+            echo "FILE_PATH=$FILE" >> $GITHUB_ENV
+          fi
+
+      - name: Convert .guac to video using guacd Docker image
+        run: |
+          # Get absolute directory and filename
+          DIR=$(dirname "$(realpath ${{ env.FILE_PATH }})")
+          FILENAME=$(basename "${{ env.FILE_PATH }}")
+
+          echo "Converting $FILENAME in $DIR..."
+          
+          # Run guacenc inside the official Docker container
+          docker run --rm -v "$DIR:/data" guacamole/guacd guacenc "/data/$FILENAME"
+
+      - name: Upload Video Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: converted-video-recording
+          path: |
+            **/*.m4v
+            **/*.mp4
+          retention-days: 7
