@@ -19,18 +19,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install guacenc dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y guacamole-server-utils ffmpeg
+          sudo apt-get install -y \
+            build-essential \
+            libcairo2-dev \
+            libjpeg-turbo8-dev \
+            libpng-dev \
+            libtool-bin \
+            libossp-uuid-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libswscale-dev \
+            ffmpeg
 
-      - name: Locate .guac files
+      - name: Build guacenc from source
+        run: |
+          GUAC_VERSION="1.5.5"
+          wget https://downloads.apache.org/guacamole/${GUAC_VERSION}/source/guacamole-server-${GUAC_VERSION}.tar.gz
+          tar -xzf guacamole-server-${GUAC_VERSION}.tar.gz
+          cd guacamole-server-${GUAC_VERSION}
+          ./configure --with-init-dir=/etc/init.d
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+
+      - name: Locate .guac file
         id: find_files
         run: |
           if [ -n "${{ github.event.inputs.guac_file_path }}" ]; then
             echo "FILE_PATH=${{ github.event.inputs.guac_file_path }}" >> $GITHUB_ENV
           else
-            # Find the first .guac file in the repo
             FILE=$(find . -maxdepth 3 -name "*.guac" | head -n 1)
             if [ -z "$FILE" ]; then
               echo "Error: No .guac file found."
@@ -39,18 +60,26 @@ jobs:
             echo "FILE_PATH=$FILE" >> $GITHUB_ENV
           fi
 
-      - name: Convert .guac to video
+      - name: Convert .guac to MP4 video
         run: |
           echo "Converting ${{ env.FILE_PATH }}..."
           
-          # guacenc converts the file and outputs an .m4v video in the same directory
+          # Run guacenc (outputs an .m4v file)
           guacenc "${{ env.FILE_PATH }}"
+          
+          # Convert output .m4v to universal .mp4 using ffmpeg
+          M4V_FILE="${{ env.FILE_PATH }}.m4v"
+          OUTPUT_MP4="${{ env.FILE_PATH }}.mp4"
+          
+          if [ -f "$M4V_FILE" ]; then
+            ffmpeg -i "$M4V_FILE" -c:v libx264 -pix_fmt yuv420p "$OUTPUT_MP4"
+          fi
 
       - name: Upload Video Artifact
         uses: actions/upload-artifact@v4
         with:
           name: converted-video-recording
           path: |
-            **/*.m4v
             **/*.mp4
+            **/*.m4v
           retention-days: 7
