@@ -60,41 +60,44 @@ jobs:
             echo "FILE_PATH=$FILE" >> $GITHUB_ENV
           fi
 
-      - name: Detect Resolution & Convert to High-Clarity MP4
+      - name: Extract Real Resolution & Convert to MP4
         run: |
           FILE="${{ env.FILE_PATH }}"
-          echo "Processing $FILE..."
+          echo "Analyzing $FILE for real display dimensions..."
 
-          # Extract size instruction line by splitting at semicolons first
-          SIZE_LINE=$(tr ';' '\n' < "$FILE" | grep -m 1 '\.size,' || true)
+          # Extract max layer 0 resolution from .size commands
+          REAL_DIM=$(tr ';' '\n' < "$FILE" | grep '\.size,1\.0,' | awk -F',' '{
+            gsub(/.*[\.]/, "", $3); 
+            gsub(/.*[\.]/, "", $4); 
+            w=$3; h=$4; 
+            if (w > max_w) max_w=w; 
+            if (h > max_h) max_h=h; 
+          } END { 
+            if (max_w > 0 && max_h > 0) print max_w " " max_h; 
+          }')
 
-          if [ -n "$SIZE_LINE" ]; then
-            RAW_W=$(echo "$SIZE_LINE" | awk -F',' '{print $3}')
-            RAW_H=$(echo "$SIZE_LINE" | awk -F',' '{print $4}')
+          READ_W=$(echo $REAL_DIM | awk '{print $1}')
+          READ_H=$(echo $REAL_DIM | awk '{print $2}')
 
-            WIDTH=$(echo "$RAW_W" | sed 's/.*\.//' | tr -d '[:alpha:];')
-            HEIGHT=$(echo "$RAW_H" | sed 's/.*\.//' | tr -d '[:alpha:];')
-          fi
+          # Fallback if layer 0 size parsing is missing
+          WIDTH=${READ_W:-1473}
+          HEIGHT=${READ_H:-834}
 
-          # Safe fallback if parsing fails
-          WIDTH=${WIDTH:-640}
-          HEIGHT=${HEIGHT:-480}
+          # 2x Integer scaling to guarantee razor-sharp text
+          TARGET_W=$((WIDTH * 2))
+          TARGET_H=$((HEIGHT * 2))
+          RESOLUTION="${TARGET_W}x${TARGET_H}"
 
-          # 2x Integer Upscale to preserve text crispness (e.g. 640x480 -> 1280x960)
-          U_WIDTH=$((WIDTH * 2))
-          U_HEIGHT=$((HEIGHT * 2))
-          RESOLUTION="${U_WIDTH}x${U_HEIGHT}"
+          echo "True Native Base: ${WIDTH}x${HEIGHT} | Target Render Resolution: $RESOLUTION"
 
-          echo "Original: ${WIDTH}x${HEIGHT} | Upscaled Target: $RESOLUTION"
-
-          # Encode at 2x canvas size with high bitrate
+          # Encode canvas at 2x native size
           guacenc -s "$RESOLUTION" -r 15000000 "$FILE"
 
           M4V_FILE="${FILE}.m4v"
           OUTPUT_MP4="${FILE}.mp4"
 
           if [ -f "$M4V_FILE" ]; then
-            # Convert to MP4 using CRF 14 (visually lossless) & crisp nearest-neighbor scaling
+            # Convert using visually lossless encoding (CRF 14) and crisp edge preservation
             ffmpeg -i "$M4V_FILE" \
               -vf "scale=iw:ih:flags=neighbor" \
               -c:v libx264 -crf 14 -preset slow -pix_fmt yuv420p "$OUTPUT_MP4"
