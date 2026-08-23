@@ -19,6 +19,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install guacenc dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y guacamole-server-utils ffmpeg
+
       - name: Locate .guac files
         id: find_files
         run: |
@@ -34,20 +39,12 @@ jobs:
             echo "FILE_PATH=$FILE" >> $GITHUB_ENV
           fi
 
-      - name: Convert .guac to video using guacd Docker image
+      - name: Convert .guac to video
         run: |
-          # Get absolute directory and filename
-          DIR=$(dirname "$(realpath ${{ env.FILE_PATH }})")
-          FILENAME=$(basename "${{ env.FILE_PATH }}")
-
-          echo "Converting $FILENAME in $DIR..."
-
-          # Override the entrypoint to run guacenc instead of starting the daemon on port 4822
-          docker run --rm \
-            --entrypoint guacenc \
-            -v "$DIR:/data" \
-            guacamole/guacd \
-            "/data/$FILENAME"
+          echo "Converting ${{ env.FILE_PATH }}..."
+          
+          # guacenc converts the file and outputs an .m4v video in the same directory
+          guacenc "${{ env.FILE_PATH }}"
 
       - name: Upload Video Artifact
         uses: actions/upload-artifact@v4
