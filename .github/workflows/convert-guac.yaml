@@ -60,19 +60,37 @@ jobs:
             echo "FILE_PATH=$FILE" >> $GITHUB_ENV
           fi
 
-      - name: Convert .guac to MP4 video
+      - name: Detect Native Resolution & Convert to MP4
         run: |
-          echo "Converting ${{ env.FILE_PATH }}..."
-          
-          # Run guacenc (outputs an .m4v file)
-          guacenc "${{ env.FILE_PATH }}"
-          
-          # Convert output .m4v to universal .mp4 using ffmpeg
-          M4V_FILE="${{ env.FILE_PATH }}.m4v"
-          OUTPUT_MP4="${{ env.FILE_PATH }}.mp4"
-          
+          FILE="${{ env.FILE_PATH }}"
+          echo "Processing $FILE..."
+
+          # Extract native width & height from the Guacamole session size instruction
+          SIZE_LINE=$(grep -m 1 '\.size,' "$FILE" || true)
+
+          if [ -n "$SIZE_LINE" ]; then
+            WIDTH=$(echo "$SIZE_LINE" | awk -F',' '{print $3}' | tr -d '[:alpha:].;')
+            HEIGHT=$(echo "$SIZE_LINE" | awk -F',' '{print $4}' | tr -d '[:alpha:].;')
+            RESOLUTION="${WIDTH}x${HEIGHT}"
+          fi
+
+          # Default safety fallback if grep fails to parse
+          if [ -z "$WIDTH" ] || [ -z "$HEIGHT" ]; then
+            echo "Could not extract size instruction. Falling back to 1920x1080."
+            RESOLUTION="1920x1080"
+          fi
+
+          echo "Encoding .guac at native resolution: $RESOLUTION..."
+
+          # Encode using the exact extracted resolution and 10 Mbps bitrate
+          guacenc -s "$RESOLUTION" -r 10000000 "$FILE"
+
+          M4V_FILE="${FILE}.m4v"
+          OUTPUT_MP4="${FILE}.mp4"
+
           if [ -f "$M4V_FILE" ]; then
-            ffmpeg -i "$M4V_FILE" -c:v libx264 -pix_fmt yuv420p "$OUTPUT_MP4"
+            # Visually lossless H.264 encode via ffmpeg (-crf 18)
+            ffmpeg -i "$M4V_FILE" -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p "$OUTPUT_MP4"
           fi
 
       - name: Upload Video Artifact
@@ -81,5 +99,4 @@ jobs:
           name: converted-video-recording
           path: |
             **/*.mp4
-            **/*.m4v
           retention-days: 7
