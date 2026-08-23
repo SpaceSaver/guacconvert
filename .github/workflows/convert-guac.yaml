@@ -41,9 +41,13 @@ jobs:
           FILENAME=$(basename "${{ env.FILE_PATH }}")
 
           echo "Converting $FILENAME in $DIR..."
-          
-          # Run guacenc inside the official Docker container
-          docker run --rm -v "$DIR:/data" guacamole/guacd guacenc "/data/$FILENAME"
+
+          # Override the entrypoint to run guacenc instead of starting the daemon on port 4822
+          docker run --rm \
+            --entrypoint guacenc \
+            -v "$DIR:/data" \
+            guacamole/guacd \
+            "/data/$FILENAME"
 
       - name: Upload Video Artifact
         uses: actions/upload-artifact@v4
