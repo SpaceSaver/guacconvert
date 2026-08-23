@@ -60,12 +60,12 @@ jobs:
             echo "FILE_PATH=$FILE" >> $GITHUB_ENV
           fi
 
-      - name: Detect Native Resolution & Convert to MP4
+      - name: Detect Resolution & Convert to High-Clarity MP4
         run: |
           FILE="${{ env.FILE_PATH }}"
           echo "Processing $FILE..."
 
-          # Split semicolon-delimited instructions onto separate lines and grab .size
+          # Extract size instruction line by splitting at semicolons first
           SIZE_LINE=$(tr ';' '\n' < "$FILE" | grep -m 1 '\.size,' || true)
 
           if [ -n "$SIZE_LINE" ]; then
@@ -74,27 +74,30 @@ jobs:
 
             WIDTH=$(echo "$RAW_W" | sed 's/.*\.//' | tr -d '[:alpha:];')
             HEIGHT=$(echo "$RAW_H" | sed 's/.*\.//' | tr -d '[:alpha:];')
-
-            if [ -n "$WIDTH" ] && [ -n "$HEIGHT" ]; then
-              RESOLUTION="${WIDTH}x${HEIGHT}"
-            fi
           fi
 
-          if [ -z "$RESOLUTION" ]; then
-            echo "Could not extract size instruction. Falling back to 1920x1080."
-            RESOLUTION="1920x1080"
-          fi
+          # Safe fallback if parsing fails
+          WIDTH=${WIDTH:-640}
+          HEIGHT=${HEIGHT:-480}
 
-          echo "Detected native resolution: $RESOLUTION"
+          # 2x Integer Upscale to preserve text crispness (e.g. 640x480 -> 1280x960)
+          U_WIDTH=$((WIDTH * 2))
+          U_HEIGHT=$((HEIGHT * 2))
+          RESOLUTION="${U_WIDTH}x${U_HEIGHT}"
 
-          # Encode using native resolution
-          guacenc -s "$RESOLUTION" -r 10000000 "$FILE"
+          echo "Original: ${WIDTH}x${HEIGHT} | Upscaled Target: $RESOLUTION"
+
+          # Encode at 2x canvas size with high bitrate
+          guacenc -s "$RESOLUTION" -r 15000000 "$FILE"
 
           M4V_FILE="${FILE}.m4v"
           OUTPUT_MP4="${FILE}.mp4"
 
           if [ -f "$M4V_FILE" ]; then
-            ffmpeg -i "$M4V_FILE" -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p "$OUTPUT_MP4"
+            # Convert to MP4 using CRF 14 (visually lossless) & crisp nearest-neighbor scaling
+            ffmpeg -i "$M4V_FILE" \
+              -vf "scale=iw:ih:flags=neighbor" \
+              -c:v libx264 -crf 14 -preset slow -pix_fmt yuv420p "$OUTPUT_MP4"
           fi
 
       - name: Upload Video Artifact
