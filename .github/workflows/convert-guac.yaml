@@ -65,7 +65,8 @@ jobs:
           FILE="${{ env.FILE_PATH }}"
           echo "Processing $FILE..."
 
-          SIZE_LINE=$(grep -m 1 '\.size,' "$FILE" || true)
+          # Split semicolon-delimited instructions onto separate lines and grab .size
+          SIZE_LINE=$(tr ';' '\n' < "$FILE" | grep -m 1 '\.size,' || true)
 
           if [ -n "$SIZE_LINE" ]; then
             RAW_W=$(echo "$SIZE_LINE" | awk -F',' '{print $3}')
@@ -93,7 +94,6 @@ jobs:
           OUTPUT_MP4="${FILE}.mp4"
 
           if [ -f "$M4V_FILE" ]; then
-            # Convert .m4v to .mp4 using high quality (crf 18)
             ffmpeg -i "$M4V_FILE" -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p "$OUTPUT_MP4"
           fi
 
